@@ -1,5 +1,15 @@
 # ComfyUI BitDance Nodes
 
+This package adds BitDance nodes for ComfyUI with a single loader and modular encode/sampler/VAE nodes.
+
+## Nodes
+
+- `BitDance Loader` -> `BITDANCE_MODEL`, `BITDANCE_TEXT_ENCODER`, `BITDANCE_VAE`
+- `BitDance Text Encode` -> `positive`, `negative`, `positive_prompt`
+- `BitDance Text Encode Cached` -> `positive`, `negative`, `positive_prompt`
+- `BitDance Sampler` -> `BITDANCE_LATENT`
+- `BitDance VAE Decode` -> `IMAGE`
+- `BitDance VAE Encode` -> `BITDANCE_LATENT`
 
 ## Install
 
@@ -18,6 +28,11 @@ Place your converted files in standard ComfyUI folders:
 - VAE -> `ComfyUI/models/vae/BitDance_VAE_FP16.safetensors`
 
 Tokenizer files are bundled with this node package, so a separate tokenizer folder in `models/` is not required for local mode.
+
+## Resources
+
+- Hugging Face model files (ComfyUI 3-file package): [comfyuiblog/BitDance-14B-64x-fp8-comfyui](https://huggingface.co/comfyuiblog/BitDance-14B-64x-fp8-comfyui/tree/main)
+- Article + workflow guide: [How to fix the generic face bug in BitDance 14B and optimize speed](https://aistudynow.com/how-to-fix-the-generic-face-bug-in-bitdance-14b-optimize-speed/)
 
 ## Workflow (Current)
 
@@ -42,6 +57,14 @@ Connect:
 Starter workflow JSON:
 
 - `workflows/BitDance_Starter.json`
+
+## YouTube
+
+- Add your video/channel link here (send the URL and it can be added directly).
+
+## X (Twitter)
+
+- [@aistudynowcom](https://x.com/aistudynowcom)
 
 ## Notes
 
