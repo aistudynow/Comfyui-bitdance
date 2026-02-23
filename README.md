@@ -33,7 +33,7 @@ Tokenizer files are bundled with this node package, so a separate tokenizer fold
 
 - Hugging Face model files (ComfyUI 3-file package): [comfyuiblog/BitDance-14B-64x-fp8-comfyui](https://huggingface.co/comfyuiblog/BitDance-14B-64x-fp8-comfyui/tree/main)
 - Article + workflow guide: [How to fix the generic face bug in BitDance 14B and optimize speed](https://aistudynow.com/how-to-fix-the-generic-face-bug-in-bitdance-14b-optimize-speed/)
-- Youtube Tutorial Guide: https://www.youtube.com/watch?v=4O9ATPbeQyg
+
 
 ## Workflow (Current)
 
@@ -61,7 +61,7 @@ Starter workflow JSON:
 
 ## YouTube
 
-- Add your video/channel link here (send the URL and it can be added directly).
+- Youtube Tutorial Guide: https://www.youtube.com/watch?v=4O9ATPbeQyg
 
 ## X (Twitter)
 
