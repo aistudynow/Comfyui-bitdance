@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Comfyui-bitdance"
+version = "1.0.0"
+description = "BitDance custom nodes for ComfyUI with unified loader, text encode, sampler, and VAE nodes."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "einops",
+  "safetensors",
+  "transformers",
+  "huggingface_hub",
+  "accelerate",
+  "tqdm",
+]
+classifiers = [
+  "Operating System :: OS Independent",
+  "Environment :: GPU :: NVIDIA CUDA",
+]
+
+[project.urls]
+Repository = "https://github.com/aistudynow/Comfyui-bitdance"
+"Bug Tracker" = "https://github.com/aistudynow/Comfyui-bitdance/issues"
+
+[tool.comfy]
+PublisherId = "aistudynow"
+PackageId = "Comfyui-bitdance"
+DisplayName = "Comfyui-bitdance"
+Description = "BitDance custom nodes for ComfyUI with unified loader, text encode, sampler, and VAE nodes."
+Repository = "https://github.com/aistudynow/Comfyui-bitdance"
+requires-comfyui = ">=0.3.0"
+
+[tool.comfy.nodes]
+BitDanceLoader = "nodes:BitDanceLoader"
+BitDanceResolution = "nodes:BitDanceResolution"
+BitDanceTextEncode = "nodes:BitDanceTextEncode"
+BitDanceTextEncodeCached = "nodes:BitDanceTextEncodeCached"
+BitDanceSampler = "nodes:BitDanceSampler"
+BitDanceDecode = "nodes:BitDanceDecode"
+BitDanceEncode = "nodes:BitDanceEncode"
