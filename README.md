@@ -1,15 +1,5 @@
 # ComfyUI BitDance Nodes
 
-This package adds BitDance nodes for ComfyUI with a single loader and modular encode/sampler/VAE nodes.
-
-## Nodes
-
-- `BitDance Loader` -> `BITDANCE_MODEL`, `BITDANCE_TEXT_ENCODER`, `BITDANCE_VAE`
-- `BitDance Text Encode` -> `positive`, `negative`, `positive_prompt`
-- `BitDance Text Encode Cached` -> `positive`, `negative`, `positive_prompt`
-- `BitDance Sampler` -> `BITDANCE_LATENT`
-- `BitDance VAE Decode` -> `IMAGE`
-- `BitDance VAE Encode` -> `BITDANCE_LATENT`
 
 ## Install
 
