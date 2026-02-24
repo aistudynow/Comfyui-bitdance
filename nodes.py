@@ -579,7 +579,14 @@ def _stream_load_safetensors_into_module(
     This is especially important for merged BitDance text encoder checkpoints.
     """
     if device_override is not None:
-        module = module.to(device_override).eval()
+        try:
+            sample_param = next(module.parameters())
+            if sample_param.device.type == "meta":
+                module = module.to_empty(device=device_override).eval()
+            else:
+                module = module.to(device_override).eval()
+        except StopIteration:
+            module = module.to(device_override).eval()
 
     state_ref = module.state_dict()
     expected_keys = set(state_ref.keys())
@@ -1419,14 +1426,53 @@ def _build_text_runtime_from_single_file(
     tokenizer = _load_tokenizer_for_single_file(text_file)
 
     cfg = local_model.DEFAULT_BITDANCE_64X_DIFFUSERS_TEXT_ENCODER_CONFIG
-    llm_model, llm_config = local_model.build_text_model_from_config_dict(
-        cfg,
-        target_dtype,
-        attention_mode=attention_mode,
-        rms_norm_function=rms_norm_function,
-    )
     text_target_device = _named_device(load_device_name)
-    llm_model = llm_model.to(text_target_device).eval()
+    init_empty_weights = _try_import_init_empty_weights()
+
+    if init_empty_weights is not None:
+        LOGGER.info("BitDanceLoader: building Qwen disabled-quantization text encoder with meta init (accelerate) to save CPU RAM.")
+        cfg_dict = dict(cfg)
+        if getattr(local_model, "Qwen3Config", None) is not None:
+            config = local_model.Qwen3Config(**cfg_dict)
+        else:
+            config = local_model.AutoConfig.for_model(cfg_dict.get("model_type", "qwen3"), **cfg_dict)
+        
+        attn_impl = local_model._normalize_text_attention_mode(attention_mode)
+        if attn_impl is not None:
+            try:
+                setattr(config, "_attn_implementation", attn_impl)
+            except Exception:
+                pass
+                
+        with init_empty_weights():
+            try:
+                llm_model = local_model.AutoModelForCausalLM.from_config(
+                    config,
+                    trust_remote_code=True,
+                    torch_dtype=target_dtype,
+                )
+            except TypeError:
+                llm_model = local_model.AutoModelForCausalLM.from_config(config)
+        
+        local_model._configure_text_model_runtime(
+            llm_model,
+            config,
+            attention_mode=attention_mode,
+            rms_norm_function=rms_norm_function,
+        )
+        llm_config = config
+    else:
+        LOGGER.warning(
+            "BitDanceLoader: accelerate.init_empty_weights not available for disabled-quantization. "
+            "Falling back to standard dense model init (will cause huge CPU RAM spike)."
+        )
+        llm_model, llm_config = local_model.build_text_model_from_config_dict(
+            cfg,
+            target_dtype,
+            attention_mode=attention_mode,
+            rms_norm_function=rms_norm_function,
+        )
+        llm_model = llm_model.to(text_target_device).eval()
 
     if quantization != "disabled":
         LOGGER.info(
@@ -2015,7 +2061,7 @@ class BitDanceSampler:
         )
         LOGGER.info("BitDanceSampler: sampler=%s", sampler_name)
         overall_inner_steps = (max_length // step_width) * int(num_sampling_steps)
-        comfy_progress = ComfyProgressBar(overall_inner_steps) if (ComfyProgressBar is not None and overall_inner_steps > 0) else None
+        comfy_progress = ComfyProgressBar(int(num_sampling_steps)) if (ComfyProgressBar is not None and int(num_sampling_steps) > 0) else None
         overall_inner_done = 0
         shared_tqdm_bar = None
         if tqdm_auto is not None and int(num_sampling_steps) > 0:
@@ -2054,7 +2100,7 @@ class BitDanceSampler:
             pos_embed_1d = _build_pos_embed_1d(hidden_size, vae_patch_size, device)
             pos_embed_for_diff = _get_2d_embed(pos_embed_1d, hidden_size, h, w, ps).unsqueeze(0)
 
-            input_embeds_cond = torch.cat([cond_emb, img_start_emb], dim=0).unsqueeze(0).repeat(num_images, 1, 1)
+            input_embeds_cond = torch.cat([cond_emb, img_start_emb], dim=0).unsqueeze(0).repeat(num_images, 1, 1).to(dtype=autocast_dtype)
             outputs_c = base_llm(inputs_embeds=input_embeds_cond[:, :-step_width, :], use_cache=True)
             pkv_c = outputs_c.past_key_values
 
@@ -2074,7 +2120,7 @@ class BitDanceSampler:
             hidden_c = outputs_c.last_hidden_state[:, -step_width:]
 
             if guidance_scale > 1.0:
-                input_embeds_uncond = torch.cat([uncond_emb, img_start_emb], dim=0).unsqueeze(0).repeat(num_images, 1, 1)
+                input_embeds_uncond = torch.cat([uncond_emb, img_start_emb], dim=0).unsqueeze(0).repeat(num_images, 1, 1).to(dtype=autocast_dtype)
                 outputs_u = base_llm(inputs_embeds=input_embeds_uncond[:, :-step_width, :], use_cache=True)
                 pkv_u = outputs_u.past_key_values
                 outputs_u = base_llm(
@@ -2092,17 +2138,12 @@ class BitDanceSampler:
                 h_fused = torch.cat([hidden_c, hidden_u], dim=0) if guidance_scale > 1.0 else hidden_c
                 h_fused = h_fused + pos_embed_for_diff[:, step * step_width : (step + 1) * step_width, :]
 
-                inner_last_step = 0
                 tqdm_bar = shared_tqdm_bar
+                inner_last_step = 0
+                
                 if tqdm_bar is not None:
-                    try:
-                        tqdm_bar.reset(total=int(num_sampling_steps))
-                        if hasattr(tqdm_bar, "set_description_str"):
-                            tqdm_bar.set_description_str("BitDanceSampler")
-                        else:
-                            tqdm_bar.set_description("BitDanceSampler")
-                    except Exception:
-                        tqdm_bar = None
+                    # Do not reset for every chunk, just update continuously based on overall progress
+                    pass
 
                 def _inner_step_progress(cur_step: int, total_steps: int):
                     nonlocal inner_last_step, overall_inner_done
@@ -2112,16 +2153,17 @@ class BitDanceSampler:
                     inner_last_step = int(cur_step)
                     if tqdm_bar is not None:
                         try:
-                            tqdm_bar.update(delta)
+                            # Update tqdm based on fractional block completion
+                            tqdm_bar.update(delta / num_steps)
                         except Exception:
                             pass
                     if comfy_progress is not None:
                         overall_inner_done += delta
                         try:
-                            comfy_progress.update_absolute(overall_inner_done, overall_inner_steps)
+                            comfy_progress.update_absolute(int(overall_inner_done / num_steps), int(num_sampling_steps))
                         except Exception:
                             try:
-                                comfy_progress.update(delta)
+                                comfy_progress.update(int(delta / num_steps))
                             except Exception:
                                 pass
 
@@ -2134,9 +2176,9 @@ class BitDanceSampler:
                 )
                 if tqdm_bar is not None:
                     try:
+                        # Ensure any remaining steps for this block are pushed
                         if inner_last_step < int(num_sampling_steps):
-                            tqdm_bar.update(int(num_sampling_steps) - inner_last_step)
-                        tqdm_bar.refresh()
+                            tqdm_bar.update((int(num_sampling_steps) - inner_last_step) / num_steps)
                     except Exception:
                         pass
                 curr_tokens = torch.sign(pred_latents)
@@ -2144,6 +2186,7 @@ class BitDanceSampler:
                 out_tokens.append(curr_tokens[:num_images])
 
                 model_input = curr_embeds + pos_embed_for_diff[:, step * step_width : (step + 1) * step_width, :]
+                model_input = model_input.to(dtype=autocast_dtype)
                 pkv_len = _cache_seq_len(pkv_c)
                 bi_attn_mask = torch.ones(
                     (model_input.shape[0], 1, model_input.shape[1], model_input.shape[1] + pkv_len),
