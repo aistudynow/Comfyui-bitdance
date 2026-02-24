@@ -1,6 +1,7 @@
 from __future__ import annotations
 # Created by aistudynow.com
 
+import contextlib
 import gc
 import hashlib
 import inspect
@@ -623,8 +624,9 @@ def _stream_load_safetensors_into_module(
                 if scale_tensor is not None:
                     dest = state_ref[out_key]
                     deq_device = dest.device if getattr(dest, "is_cuda", False) else tensor.device
-                    tensor = tensor.to(deq_device).float()
-                    scale_tensor = scale_tensor.to(deq_device).float()
+                    deq_dtype = dest.dtype if dest.is_floating_point() else target_dtype
+                    tensor = tensor.to(device=deq_device, dtype=deq_dtype)
+                    scale_tensor = scale_tensor.to(device=deq_device, dtype=deq_dtype)
                     while scale_tensor.ndim < tensor.ndim:
                         scale_tensor = scale_tensor.unsqueeze(-1)
                     if scale_key_used is not None and scale_key_used.endswith(".input_scale"):
@@ -639,7 +641,11 @@ def _stream_load_safetensors_into_module(
                             file_path.name,
                         )
                         warned_cast_only_fp8 = True
-                    tensor = tensor.float()
+                    
+                    dest = state_ref[out_key]
+                    is_float = getattr(dest, "is_floating_point", None)
+                    deq_dtype = dest.dtype if (is_float is not None and is_float()) else target_dtype
+                    tensor = tensor.to(dtype=deq_dtype)
 
             dest = state_ref[out_key]
             if tensor.is_floating_point():
@@ -1444,7 +1450,7 @@ def _build_text_runtime_from_single_file(
             except Exception:
                 pass
                 
-        with init_empty_weights():
+        with init_empty_weights(), torch.autocast("cuda", dtype=target_dtype) if torch.cuda.is_available() else contextlib.nullcontext():
             try:
                 llm_model = local_model.AutoModelForCausalLM.from_config(
                     config,
@@ -1489,6 +1495,8 @@ def _build_text_runtime_from_single_file(
         key_prefixes=("text_encoder.", "model.text_encoder."),
         device_override=text_target_device,
     )
+    # Ensure structural wrappers of the empty skeleton are matched to the streamed tensors
+    llm_model = llm_model.to(text_target_device).eval()
 
     hidden_size = int(getattr(llm_config, "hidden_size", cfg["hidden_size"]))
     return BitDanceTextRuntime(
@@ -2090,11 +2098,11 @@ class BitDanceSampler:
             res_w_id = _token_id(tokenizer, f"<|res_{w}|>")
             img_start_emb = embed_tokens(
                 torch.tensor([img_start_id, res_h_id, res_w_id], device=device, dtype=torch.long)
-            )
+            ).to(dtype=autocast_dtype)
 
             for i in range(1, model.parallel_num):
                 query_id = _token_id(tokenizer, f"<|query_{i}|>")
-                query_embed = embed_tokens(torch.tensor([query_id], device=device, dtype=torch.long))
+                query_embed = embed_tokens(torch.tensor([query_id], device=device, dtype=torch.long)).to(dtype=autocast_dtype)
                 img_start_emb = torch.cat([img_start_emb, query_embed], dim=0)
 
             pos_embed_1d = _build_pos_embed_1d(hidden_size, vae_patch_size, device)
@@ -2274,7 +2282,48 @@ class BitDanceDecode:
         autocast_enabled = device.type == "cuda"
         autocast_dtype = torch.bfloat16 if autocast_enabled else torch.float32
         with torch.no_grad(), torch.autocast(device_type=device.type, enabled=autocast_enabled, dtype=autocast_dtype):
-            decoded = vae.vae.decode(image_latents)
+            def decode_tiled(latents: torch.Tensor, tile_size: int = 256, overlap: int = 32) -> torch.Tensor:
+                b, c, h, w = latents.shape
+                out_h, out_w = h * vae.vae_patch_size, w * vae.vae_patch_size
+                out_shape = (int(b), int(3), int(out_h), int(out_w))
+                output = torch.zeros(out_shape, device=latents.device, dtype=torch.float32)
+                counts = torch.zeros(out_shape, device=latents.device, dtype=torch.float32)
+
+                stride = tile_size - overlap
+                for y in range(0, h, stride):
+                    for x in range(0, w, stride):
+                        y_end = min(y + tile_size, h)
+                        x_end = min(x + tile_size, w)
+                        y_start = max(0, y_end - tile_size)
+                        x_start = max(0, x_end - tile_size)
+
+                        chunk = latents[:, :, y_start:y_end, x_start:x_end]
+                        try:
+                            decoded_chunk = vae.vae.decode(chunk).to(torch.float32)
+                        except torch.cuda.OutOfMemoryError:
+                            comfy.model_management.soft_empty_cache()
+                            return decode_tiled(latents, tile_size=int(tile_size // 2), overlap=int(overlap // 2))
+
+                        out_y_start = y_start * vae.vae_patch_size
+                        out_y_end = y_end * vae.vae_patch_size
+                        out_x_start = x_start * vae.vae_patch_size
+                        out_x_end = x_end * vae.vae_patch_size
+
+                        output[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += decoded_chunk
+                        counts[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += 1.0
+
+                return (output / counts.clamp(min=1.0)).to(dtype=autocast_dtype)
+
+            try:
+                if image_latents.shape[-1] * image_latents.shape[-2] >= 2000:
+                    LOGGER.info("BitDanceDecode: High resolution detected, falling back to tiled decoding to avoid VRAM overdraw.")
+                    decoded = decode_tiled(image_latents, tile_size=128, overlap=32)
+                else:
+                    decoded = vae.vae.decode(image_latents)
+            except torch.cuda.OutOfMemoryError as e:
+                LOGGER.warning("BitDanceDecode: OOM on standard decode, attempting tiled decode...")
+                comfy.model_management.soft_empty_cache()
+                decoded = decode_tiled(image_latents, tile_size=64, overlap=16)
 
         image = torch.clamp(decoded, -1.0, 1.0)
         image = (image + 1.0) * 0.5
