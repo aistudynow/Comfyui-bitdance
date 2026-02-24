@@ -1967,6 +1967,11 @@ class BitDanceSampler:
             )
 
         device = comfy.model_management.get_torch_device()
+        offload_device = comfy.model_management.unet_offload_device()
+        
+        comfy.model_management.unload_all_models()
+        comfy.model_management.soft_empty_cache()
+
         if seed is not None:
             torch.manual_seed(seed)
             if torch.cuda.is_available():
@@ -2172,6 +2177,12 @@ class BitDanceSampler:
                 shared_tqdm_bar.close()
             except Exception:
                 pass
+
+        model.vision_head = model.vision_head.to(offload_device)
+        model.projector = model.projector.to(offload_device)
+        text_encoder.llm_model = text_encoder.llm_model.to(offload_device)
+        comfy.model_management.soft_empty_cache()
+
         latent = BitDanceLatentRuntime(tokens=full_output[:num_images].detach(), h=h, w=w, ps=ps)
         return (latent,)
 
@@ -2193,6 +2204,11 @@ class BitDanceDecode:
 
     def decode(self, vae: BitDanceVAERuntime, bitdance_latent: BitDanceLatentRuntime):
         device = comfy.model_management.get_torch_device()
+        offload_device = comfy.model_management.unet_offload_device()
+
+        comfy.model_management.unload_all_models()
+        comfy.model_management.soft_empty_cache()
+
         vae.vae = vae.vae.to(device).eval()
 
         tokens = bitdance_latent.tokens.to(device)
@@ -2220,6 +2236,10 @@ class BitDanceDecode:
         image = torch.clamp(decoded, -1.0, 1.0)
         image = (image + 1.0) * 0.5
         image = image.permute(0, 2, 3, 1).to(dtype=torch.float32).cpu()
+
+        vae.vae = vae.vae.to(offload_device)
+        comfy.model_management.soft_empty_cache()
+
         return (image,)
 
 
@@ -2248,6 +2268,11 @@ class BitDanceEncode:
             raise ValueError(f"parallel_num must be a perfect square, got {parallel_num}.")
 
         device = comfy.model_management.get_torch_device()
+        offload_device = comfy.model_management.unet_offload_device()
+
+        comfy.model_management.unload_all_models()
+        comfy.model_management.soft_empty_cache()
+
         vae.vae = vae.vae.to(device).eval()
 
         x = image.to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
@@ -2277,6 +2302,10 @@ class BitDanceEncode:
             p1=ps,
             p2=ps,
         )
+
+        vae.vae = vae.vae.to(offload_device)
+        comfy.model_management.soft_empty_cache()
+
         return (BitDanceLatentRuntime(tokens=tokens.detach(), h=h, w=w, ps=ps),)
 
 
