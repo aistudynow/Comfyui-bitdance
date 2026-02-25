@@ -2203,28 +2203,33 @@ class BitDanceSampler:
 
                 model_input = curr_embeds + pos_embed_for_diff[:, step * step_width : (step + 1) * step_width, :]
                 model_input = model_input.to(dtype=autocast_dtype)
-                pkv_len = _cache_seq_len(pkv_c)
-                bi_attn_mask = torch.ones(
-                    (model_input.shape[0], 1, model_input.shape[1], model_input.shape[1] + pkv_len),
+                pkv_len_c = _cache_seq_len(pkv_c)
+                bi_attn_mask_c = torch.ones(
+                    (num_images, 1, model_input.shape[1], model_input.shape[1] + pkv_len_c),
                     dtype=torch.bool,
                     device=device,
                 )
-
                 outputs_c = base_llm(
                     inputs_embeds=model_input[:num_images],
                     past_key_values=pkv_c,
                     use_cache=True,
-                    attention_mask=bi_attn_mask[:num_images],
+                    attention_mask=bi_attn_mask_c,
                 )
                 pkv_c = outputs_c.past_key_values
                 hidden_c = outputs_c.last_hidden_state[:, -step_width:]
 
                 if guidance_scale > 1.0:
+                    pkv_len_u = _cache_seq_len(pkv_u)
+                    bi_attn_mask_u = torch.ones(
+                        (num_images, 1, model_input.shape[1], model_input.shape[1] + pkv_len_u),
+                        dtype=torch.bool,
+                        device=device,
+                    )
                     outputs_u = base_llm(
                         inputs_embeds=model_input[num_images:],
                         past_key_values=pkv_u,
                         use_cache=True,
-                        attention_mask=bi_attn_mask[num_images:],
+                        attention_mask=bi_attn_mask_u,
                     )
                     pkv_u = outputs_u.past_key_values
                     hidden_u = outputs_u.last_hidden_state[:, -step_width:]
