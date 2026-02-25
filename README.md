@@ -1,12 +1,13 @@
 # ComfyUI BitDance Nodes
 
-- Fixed `BitDanceSampler` crash with `guidance_scale > 1.0` when positive/negative prompts have different token lengths (separate attention masks are now built for cond/uncond cache lengths).
-
-
 Make sure: BitDance Loader -> quantization = fp8_e4m3fn_scaled
 
 ### Changelog / Updates
+
+- Fixed `BitDanceSampler` crash with `guidance_scale > 1.0` when positive/negative prompts have different token lengths (separate attention masks are now built for cond/uncond cache lengths). Thanks to user @hl2dm
+
 - **Feb 2026**: Fixed severe OOM crash on 16GB-24GB cards at high resolutions (1024px+). The VRAM manager now forcibly unloads and explicitly restores `comfy.model_management.unload_all_models()` between the LLM text encoding, Vision sampling, and VAE decoding, allowing high-resolution inference!
+- 
 
 This package adds BitDance nodes for ComfyUI with a single loader and modular encode/sampler/VAE nodes.
 
