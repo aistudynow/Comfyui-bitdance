@@ -6,21 +6,21 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-import torch
-import torch.nn as nn
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+import torch  # type: ignore
+import torch.nn as nn  # type: ignore
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # type: ignore
 try:
-    from transformers import Qwen3Config
+    from transformers import Qwen3Config  # type: ignore
 except Exception:  # pragma: no cover
     Qwen3Config = None
-from transformers.activations import ACT2FN
+from transformers.activations import ACT2FN  # type: ignore
 
 # NOTE:
 # This module intentionally binds to the official BitDance architecture files.
 # If you move this node pack out of the BitDance repository, copy the official
 # model classes into this file (or alongside it) and keep these function names.
-from .bitdance_arch.vision_encoder.autoencoder import VQModel
-from .bitdance_arch.vision_head.flow_head_parallel_x import DiffHead, set_bitdance_attention_mode
+from .bitdance_arch.vision_encoder.autoencoder import VQModel  # type: ignore
+from .bitdance_arch.vision_head.flow_head_parallel_x import DiffHead, set_bitdance_attention_mode  # type: ignore
 
 
 class MLPconnector(torch.nn.Module):
@@ -161,13 +161,13 @@ def _replace_rmsnorm_with_pytorch(module: nn.Module) -> int:
             if isinstance(weight, torch.Tensor):
                 eps = getattr(child, "variance_epsilon", getattr(child, "eps", 1e-6))
                 new_mod = nn.RMSNorm(
-                    weight.shape,
+                    weight.shape,  # type: ignore
                     eps=float(eps),
                     elementwise_affine=True,
-                    device=weight.device,
-                    dtype=weight.dtype,
+                    device=weight.device,  # type: ignore
+                    dtype=weight.dtype,  # type: ignore
                 )
-                if weight.device.type != "meta":
+                if weight.device.type != "meta":  # type: ignore
                     with torch.no_grad():
                         new_mod.weight.copy_(weight)
                 setattr(module, name, new_mod)

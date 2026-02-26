@@ -11,28 +11,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
-import torch
-from einops import rearrange
-from safetensors import safe_open
-from safetensors.torch import load_file as load_safetensors
+import torch  # type: ignore
+from einops import rearrange  # type: ignore
+from safetensors import safe_open  # type: ignore
+from safetensors.torch import load_file as load_safetensors  # type: ignore
 
-import comfy.model_management
-import comfy.model_patcher
-import folder_paths
+import comfy.model_management  # type: ignore
+import comfy.model_patcher  # type: ignore
+import folder_paths  # type: ignore
 try:
-    from comfy.utils import ProgressBar as ComfyProgressBar
+    from comfy.utils import ProgressBar as ComfyProgressBar  # type: ignore
 except Exception:  # pragma: no cover - depends on host ComfyUI build
     ComfyProgressBar = None
 
 try:
-    from tqdm.auto import tqdm as tqdm_auto
+    from tqdm.auto import tqdm as tqdm_auto  # type: ignore
 except Exception:  # pragma: no cover - optional
     tqdm_auto = None
 
-from . import local_model
+from . import local_model  # type: ignore
 
 try:
-    import comfy.ops as comfy_ops
+    import comfy.ops as comfy_ops  # type: ignore
 except Exception:  # pragma: no cover - depends on host ComfyUI build
     comfy_ops = None
 
@@ -402,7 +402,7 @@ def _scale_key_candidates(weight_key: str) -> Tuple[str, ...]:
 def _rename_diffusers_to_comfy_key(key: str) -> str:
     out = key
     if out.startswith("unet."):
-        out = out[5:]
+        out = out[5:]  # type: ignore
 
     # Lightweight fallback mapping for diffusers-style names.
     if out.startswith("conv_in."):
@@ -454,7 +454,7 @@ def _dequantize_state_dict(
         elif _is_aux_quant_key(key):
             continue
     if external_scales is not None:
-        for key, value in external_scales.items():
+        for key, value in external_scales.items():  # type: ignore
             if _is_scale_key(key):
                 scales[key] = value
                 has_mixed_scale_keys = True
@@ -471,18 +471,18 @@ def _dequantize_state_dict(
             scale_key_used = None
             for candidate in _scale_key_candidates(key):
                 if candidate in scales:
-                    scale_tensor = scales[candidate]
+                    scale_tensor = scales[candidate]  # type: ignore
                     scale_key_used = candidate
                     break
             if scale_tensor is not None:
                 tensor = tensor.float()
-                scale_tensor = scale_tensor.float()
+                scale_tensor = scale_tensor.float()  # type: ignore
                 while scale_tensor.ndim < tensor.ndim:
                     scale_tensor = scale_tensor.unsqueeze(-1)
                 # Comfy-style weight_scale and this wrapper's converter store dequant scales where:
                 #   q = x / scale   ->   x ~= q * scale
                 # Some external formats may use input_scale semantics (divide on load).
-                if scale_key_used is not None and scale_key_used.endswith(".input_scale"):
+                if scale_key_used is not None and scale_key_used.endswith(".input_scale"):  # type: ignore
                     tensor = tensor / scale_tensor
                 else:
                     tensor = tensor * scale_tensor
@@ -518,7 +518,7 @@ def _apply_manual_cast_hint(module: torch.nn.Module):
         module.manual_cast_dtype = torch.bfloat16
     for child in module.modules():
         if hasattr(child, "comfy_cast_weights"):
-            child.comfy_cast_weights = True
+            child.comfy_cast_weights = True  # type: ignore
 
 
 def _empty_cuda_cache():
@@ -562,7 +562,7 @@ def _load_component_state_dict_from_raw(
 def _strip_first_matching_prefix(key: str, prefixes: Tuple[str, ...]) -> str:
     for prefix in prefixes:
         if key.startswith(prefix):
-            return key[len(prefix) :]
+            return key[len(prefix) :]  # type: ignore
     return key
 
 
@@ -622,14 +622,14 @@ def _stream_load_safetensors_into_module(
                         scale_tensor = sf.get_tensor(candidate)
                         break
                 if scale_tensor is not None:
-                    dest = state_ref[out_key]
+                    dest = state_ref[out_key]  # type: ignore
                     deq_device = dest.device if getattr(dest, "is_cuda", False) else tensor.device
                     deq_dtype = dest.dtype if dest.is_floating_point() else target_dtype
                     tensor = tensor.to(device=deq_device, dtype=deq_dtype)
-                    scale_tensor = scale_tensor.to(device=deq_device, dtype=deq_dtype)
+                    scale_tensor = scale_tensor.to(device=deq_device, dtype=deq_dtype)  # type: ignore
                     while scale_tensor.ndim < tensor.ndim:
                         scale_tensor = scale_tensor.unsqueeze(-1)
-                    if scale_key_used is not None and scale_key_used.endswith(".input_scale"):
+                    if scale_key_used is not None and scale_key_used.endswith(".input_scale"):  # type: ignore
                         tensor = tensor / scale_tensor
                     else:
                         tensor = tensor * scale_tensor
@@ -642,7 +642,7 @@ def _stream_load_safetensors_into_module(
                         )
                         warned_cast_only_fp8 = True
                     
-                    dest = state_ref[out_key]
+                    dest = state_ref[out_key]  # type: ignore
                     is_float = getattr(dest, "is_floating_point", None)
                     deq_dtype = dest.dtype if (is_float is not None and is_float()) else target_dtype
                     tensor = tensor.to(dtype=deq_dtype)
@@ -770,8 +770,8 @@ def _set_param_or_buffer_by_key(
 
     existing = getattr(mod, attr, None)
     if isinstance(existing, torch.nn.Parameter):
-        dev = existing.device if existing.device.type != "meta" else fallback_device
-        dt = existing.dtype if existing.device.type != "meta" else (
+        dev = existing.device if existing.device.type != "meta" else fallback_device  # type: ignore
+        dt = existing.dtype if existing.device.type != "meta" else (  # type: ignore
             target_dtype if tensor.is_floating_point() else tensor.dtype
         )
         out = tensor.to(device=dev, dtype=dt) if tensor.is_floating_point() else tensor.to(device=dev)
@@ -856,17 +856,17 @@ def _stream_load_qwen_text_encoder_fp8(
                             target_dtype=target_dtype,
                         )
                         if ok:
-                            stats["dense_linear"] += 1
-                            stats["loaded"] += 1
+                            stats["dense_linear"] += 1  # type: ignore
+                            stats["loaded"] += 1  # type: ignore
                         else:
-                            stats["unexpected"] += 1
+                            stats["unexpected"] += 1  # type: ignore
                     continue
 
                 weight_fp8 = tensor.to(target_device)
-                scale = scale_tensor.to(target_device)
+                scale = scale_tensor.to(target_device)  # type: ignore
                 mod.set_weight(weight_fp8, scale)
-                stats["fp8_linear"] += 1
-                stats["loaded"] += 1
+                stats["fp8_linear"] += 1  # type: ignore
+                stats["loaded"] += 1  # type: ignore
                 continue
 
             ok = _set_param_or_buffer_by_key(
@@ -968,7 +968,7 @@ def _build_text_runtime_from_single_file_fp8(
         stats["unexpected"],
     )
 
-    hidden_size = int(getattr(llm_config, "hidden_size", cfg["hidden_size"]))
+    hidden_size = int(getattr(llm_config, "hidden_size", cfg["hidden_size"]))  # type: ignore
     return BitDanceTextRuntime(
         root=text_file.parent,
         tokenizer=tokenizer,
@@ -984,7 +984,7 @@ def _extract_prefixed_substate(
     for k, v in raw_sd.items():
         for prefix in prefixes:
             if k.startswith(prefix):
-                out[k[len(prefix) :]] = v
+                out[k[len(prefix) :]] = v  # type: ignore
                 break
     return out
 
@@ -1050,7 +1050,7 @@ def _find_tokenizer_source_near(path: Path) -> Optional[str]:
 
 def _download_tokenizer_source() -> str:
     try:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import snapshot_download  # type: ignore
     except Exception as e:
         raise RuntimeError(
             "Tokenizer files are missing and huggingface_hub is not available. "
@@ -1498,7 +1498,7 @@ def _build_text_runtime_from_single_file(
     # Ensure structural wrappers of the empty skeleton are matched to the streamed tensors
     llm_model = llm_model.to(text_target_device).eval()
 
-    hidden_size = int(getattr(llm_config, "hidden_size", cfg["hidden_size"]))
+    hidden_size = int(getattr(llm_config, "hidden_size", cfg["hidden_size"]))  # type: ignore
     return BitDanceTextRuntime(
         root=text_file.parent,
         tokenizer=tokenizer,
@@ -1647,7 +1647,7 @@ class BitDanceTextEncoderLoader:
             except Exception as e:
                 LOGGER.warning("Failed to place BitDance text encoder on %s: %s", load_device_name, e)
 
-            hidden_size = int(getattr(llm_config, "hidden_size", local_model.load_hidden_size(model_root)))
+            hidden_size = int(getattr(llm_config, "hidden_size", local_model.load_hidden_size(model_root)))  # type: ignore
             runtime = BitDanceTextRuntime(
                 root=model_root,
                 tokenizer=tokenizer,
@@ -2048,7 +2048,7 @@ class BitDanceSampler:
         base_llm = _get_base_llm(llm_model)
         embed_tokens = _get_embed_tokens(base_llm, llm_model)
         embed_weight = getattr(embed_tokens, "weight", None)
-        embed_dtype = embed_weight.dtype if isinstance(embed_weight, torch.Tensor) else None
+        embed_dtype = embed_weight.dtype if isinstance(embed_weight, torch.Tensor) else None  # type: ignore
 
         h = height // vae_patch_size
         w = width // vae_patch_size
@@ -2174,7 +2174,7 @@ class BitDanceSampler:
                         except Exception:
                             pass
                     if comfy_progress is not None:
-                        overall_inner_done += delta
+                        overall_inner_done += delta  # type: ignore  # type: ignore
                         try:
                             comfy_progress.update_absolute(int(overall_inner_done / num_steps), int(num_sampling_steps))
                         except Exception:
@@ -2238,7 +2238,7 @@ class BitDanceSampler:
 
         if shared_tqdm_bar is not None:
             try:
-                shared_tqdm_bar.close()
+                shared_tqdm_bar.close()  # type: ignore
             except Exception:
                 pass
 
@@ -2310,7 +2310,7 @@ class BitDanceDecode:
                         y_start = max(0, y_end - tile_size)
                         x_start = max(0, x_end - tile_size)
 
-                        chunk = latents[:, :, y_start:y_end, x_start:x_end]
+                        chunk = latents[:, :, y_start:y_end, x_start:x_end]  # type: ignore
                         try:
                             decoded_chunk = vae.vae.decode(chunk).to(torch.float32)
                         except torch.cuda.OutOfMemoryError:
@@ -2322,8 +2322,8 @@ class BitDanceDecode:
                         out_x_start = x_start * vae.vae_patch_size
                         out_x_end = x_end * vae.vae_patch_size
 
-                        output[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += decoded_chunk
-                        counts[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += 1.0
+                        output[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += decoded_chunk  # type: ignore
+                        counts[:, :, out_y_start:out_y_end, out_x_start:out_x_end] += 1.0  # type: ignore
 
                 return (output / counts.clamp(min=1.0)).to(dtype=autocast_dtype)
 
