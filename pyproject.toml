@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Comfyui-bitdance"
-version = "2.0.0"
+version = "2.1.0"
 description = "BitDance custom nodes for ComfyUI with unified loader, text encode, sampler, and VAE nodes."
 readme = "README.md"
 license = { text = "Apache-2.0" }
